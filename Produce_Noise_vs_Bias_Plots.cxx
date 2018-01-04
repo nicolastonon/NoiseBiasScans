@@ -4,9 +4,12 @@ Nicolas Tonon, IPHC
 */
 
 #include <map>
+#include "TRandom3.h"
+#include "TGraphErrors.h"
 
 #include "Helper_Functions.h"
 
+#define model_choice 1 //Choose here fitting model to use
 
 using namespace std;
 
@@ -35,6 +38,22 @@ void Style_Control_Histo(TH1F* h)
 	h->GetYaxis()->SetTitle("Noise [a.u.]");
 	h->GetYaxis()->SetTitleSize(.05);
 	h->GetYaxis()->SetTitleOffset(0.95);
+
+	return;
+}
+
+void Style_Control_TGraph(TGraphErrors* g)
+{
+	g->SetMarkerStyle(8);
+	g->SetMarkerSize(1.5);
+	g->SetMarkerColor(1);
+
+	g->GetXaxis()->SetTitle("Bias voltage [V]");
+	g->GetXaxis()->SetTitleSize(.05);
+
+	g->GetYaxis()->SetTitle("Noise [a.u.]");
+	g->GetYaxis()->SetTitleSize(.05);
+	g->GetYaxis()->SetTitleOffset(0.95);
 
 	return;
 }
@@ -100,14 +119,14 @@ map< double, vector<double> > Read_Noise_For1Step_And_Fill_Map(TString step, TSt
 	TFile* f_input = TFile::Open(filename);
 	TTree* t_input = (TTree*) f_input->Get("Tree");
 
-	double detid=0, noise=0, error=0, chi2=0, pedestal_mean_err=0;
+	double detid=0, noise=0, error=0, chi2=0, noise_rms = 0;
 
 	//To read input branches
 	t_input->SetBranchAddress("detid", &detid);
 	t_input->SetBranchAddress("noise_mean", &noise);
 	t_input->SetBranchAddress("noise_err", &error);
-	t_input->SetBranchAddress("pedestal_mean_err", &pedestal_mean_err); //alternative error
 	t_input->SetBranchAddress("noise_chi2", &chi2);
+	t_input->SetBranchAddress("noise_rms", &noise_rms);
 
 	map< double, vector<double> > map_detid_noise; //Will map detid <-> noise infos (for given Vstep)
 
@@ -116,14 +135,14 @@ map< double, vector<double> > Read_Noise_For1Step_And_Fill_Map(TString step, TSt
 	for(int ientry=0; ientry<t_input->GetEntries(); ientry++)
 	{
 		//FIXME -- don't process all entries for now
-		if(ientry>10) {break;}
+		// if(ientry>10) {break;}
 
 		v_tmp.clear(); v_tmp.resize(4);
-		detid=0, noise=0, error=0, chi2=0;
+		detid=0, noise=0, error=0, chi2=0, noise_rms=0;
 
 		t_input->GetEntry(ientry);
 
-		v_tmp[0] = noise; v_tmp[1] = error; v_tmp[2] = pedestal_mean_err; v_tmp[3] = chi2;
+		v_tmp[0] = noise; v_tmp[1] = error; v_tmp[2] = noise_rms; v_tmp[3] = chi2;
 
 		map_detid_noise.insert(pair< double, vector<double> > (detid, v_tmp) );
 	}
@@ -197,7 +216,8 @@ double Fitting_Model(double* x, double *par) //Arguments by convention
 	}
 	else
 	{
-		result = par[0];
+		if(model_choice == 0) result = par[0];
+		else if(model_choice == 1) result = par[0] + par[3] * (xx - par[2]); //c0 + c1 * (x-Vfd)
 	}
 
 	return result;
@@ -236,22 +256,34 @@ double Fitting_Model(double* x, double *par) //Arguments by convention
 
 /**
  * Takes as input the Noise_vs_bias histo for given detid/run, and fits it with model ; returns the Vfd param and its error, and stores a few plots for control
- * @param histo_to_fit          -- histogram noise_vs_bias to fit
+ * @param graph_to_fit          -- TGraphErrors* noise_vs_bias to fit
  * @param counter_control_plots -- counter (don't store all control plots)
  * @param detid                 -- detid corresponding to the histo
  */
-pair<double, double> Fit_Noise_VS_Bias_Histogram_And_Make_Control_Plots(TH1F* histo_to_fit, int& counter_control_plots, double detid)
+pair<double, double> Fit_Noise_VS_Bias_Histogram_And_Make_Control_Plots(TGraphErrors* graph_to_fit, int& counter_control_plots, double detid)
 {
-	gStyle->SetOptFit(111);
+	gStyle->SetOptFit(1);
 	gStyle->SetFuncWidth(3);
 
 	//Fitting model --- (name, fcn, xmin, xmax, npar)
-	TF1* noise_fit = new TF1("myfunc", Fitting_Model, histo_to_fit->GetXaxis()->GetXmin(), histo_to_fit->GetXaxis()->GetXmax(), 3);
-	noise_fit->SetParNames("Constant","#beta", "V_{FD}");
-	noise_fit->SetParameters(5., 1., 100.); //FIXME -- init parameters
+	TF1* noise_fit;
+	if(model_choice==0)
+	{
+		noise_fit = new TF1("myfunc", Fitting_Model, graph_to_fit->GetXaxis()->GetXmin(), graph_to_fit->GetXaxis()->GetXmax(), 3);
+		noise_fit->SetParNames("Constant","#beta", "V_{FD}");
+		noise_fit->SetParameters(5., 1., 100.); //-- init. parameters needed for convergence
+		// noise_fit->SetParameters(par_cst, par_beta, par_vfd); //-- init. parameters needed for convergence
+	}
+	else if(model_choice==1)
+	{
+		noise_fit = new TF1("myfunc", Fitting_Model, graph_to_fit->GetXaxis()->GetXmin(), graph_to_fit->GetXaxis()->GetXmax(), 4);
+		noise_fit->SetParNames("Constant","#beta", "V_{FD}", "Slope");
+		noise_fit->SetParameters(6., 5., 100., 1.); //-- init. parameters needed for convergence
 
-	histo_to_fit->Fit(noise_fit, "q"); //quiet
-	// cout<<"Histo to fit : nentries = "<<histo_to_fit->GetEntries()<<endl;
+	}
+
+
+	graph_to_fit->Fit(noise_fit, "q"); //quiet
 
 	pair<double, double> result;
 	result.first = noise_fit->GetParameter(2);
@@ -260,23 +292,32 @@ pair<double, double> Fit_Noise_VS_Bias_Histogram_And_Make_Control_Plots(TH1F* hi
 	// cout<<"noise_fit->GetParameter(1) = "<<noise_fit->GetParameter(1)<<" / error = "<<noise_fit->GetParError(1)<<endl;
 	// cout<<"noise_fit->GetParameter(2) = "<<noise_fit->GetParameter(2)<<" / error = "<<noise_fit->GetParError(2)<<endl;
 
-	if(counter_control_plots < 5 && noise_fit->GetParameter(2) > 0) //Only plot few histos, not all
+	// if(counter_control_plots < 5 && noise_fit->GetParameter(2) > 0) //Only plot few histos, not all
+	if(noise_fit->GetParameter(2) > 0) //Only plot few histos, not all //FIXME
 	{
 		TCanvas* c = new TCanvas("c", "", 1000, 800); c->cd();
 		c->SetTopMargin(0.1);
 		c->SetBottomMargin(0.1);
 
-		Style_Control_Histo(histo_to_fit);
+		Style_Control_TGraph(graph_to_fit);
 
-		histo_to_fit->Draw("PE"); //Markers, error bars
+		graph_to_fit->Draw("AP"); //A=draw axis, P=draw markers,
 
 		Draw_ExtraText(c);
+
+		//--- display fit proba on plot
+		// cout<<"Fit proba : "<<noise_fit->GetProb()<<endl;
+		TLatex latex;
+		latex.SetNDC();
+		latex.SetTextSize(0.03);
+		TString tmp = "Fit->GetProb() = " + Convert_Number_To_TString(noise_fit->GetProb(), 3);
+		latex.DrawLatex(0.70, 0.60, tmp);
 
 		TLegend *leg = new TLegend(0.70, 0.70, 0.90, 0.80);
 		//leg->SetBorderSize(0.1);
 		leg->SetTextFont(42);
 		// leg->SetHeader("Noise analysis");
-		leg->AddEntry(histo_to_fit, "Data", "P");
+		leg->AddEntry(graph_to_fit, "Data", "P");
 		leg->AddEntry(noise_fit, "Fit model", "l");
 		leg->Draw("same");
 
@@ -341,11 +382,10 @@ void Produce_Noise_VS_Bias_Histograms_For_All_Detids_And_Store_Results(TString r
 		double current_detid = it->first; //if(current_detid == 0) {cout<<__LINE__<<FRED(" : Null detid -- correct map initialization ? ")<<endl;}
 		// cout<<"current_detid = "<< current_detid << endl;
 
-		//Store noise_vs_bias histo for current detid
-		// TH1F* h_noise_vs_bias_current_detid = new TH1F("", "", step_list.size(), 0, Convert_TString_To_Number(step_list[step_list.size() - 1]) );
-		double xmin = 2.5, xmax = 302.5, nbins = 60;
-		TH1F* h_noise_vs_bias_current_detid = new TH1F("", "", nbins, xmin, xmax); //CHANGED -- 26 steps in total
-
+		//FIXME -- only few TIB modules for now
+		// cout<<Convert_Number_To_TString(current_detid)<<endl;
+		if( !Convert_Number_To_TString(current_detid).Contains("36912138") && !Convert_Number_To_TString(current_detid).Contains("369121390") && !Convert_Number_To_TString(current_detid).Contains("36912586") && !Convert_Number_To_TString(current_detid).Contains("369125870") ) {continue;}
+		TGraphErrors* g_noise_vs_bias_currentDetid = new TGraphErrors(step_list.size());
 
 		double ymin = 999; //There are empty bins messing with y-axis --> will show only bins with y > ymin instead
 
@@ -361,28 +401,29 @@ void Produce_Noise_VS_Bias_Histograms_For_All_Detids_And_Store_Results(TString r
 
 			if(it == v_maps_allSteps[istep].end() ) //If detid not found
 			{
-				cout<<FRED("Detid "<<current_detid<<" not found for Vstep "<<step_list[istep]<< " !")<<endl;
+				cout<<FMAG("Detid "<<Convert_Number_To_TString(current_detid)<<" not found for Vstep "<<step_list[istep]<< " !")<<endl;
 				continue;
 			}
 
 			// cout<<"detid "<<Convert_Number_To_TString(it->first)<<", "<<step_list[istep]<<"V, noise "<<it->second[0]<<", error : "<<it->second[1]<<endl;
 
-			int ibin = Convert_TString_To_Number(step_list[istep]) / ((xmax - xmin) / nbins); //Compute bin corresponding to this voltage
+			// int ibin = Convert_TString_To_Number(step_list[istep]) / ((xmax - xmin) / nbins); //Compute bin corresponding to this voltage
 			// cout<<"Vstep = "<<step_list[istep]<<" / ibin = "<<ibin<<" / "<<nbins<<endl;
 
 			//Fill noise_vs_bias histo with noise info for current Vstep
-			h_noise_vs_bias_current_detid->SetBinContent(ibin, it->second[0]);
-			h_noise_vs_bias_current_detid->SetBinError(ibin, it->second[1]);
+			g_noise_vs_bias_currentDetid->SetPoint(istep, Convert_TString_To_Number(step_list[istep]), it->second[0]);
+			g_noise_vs_bias_currentDetid->SetPointError(istep, 0., it->second[1]); //ipt, e_x, e_y
 
 			if(it->second[0] < ymin && it->second[0] != 0) {ymin = it->second[0];} //Compute ymin (for plotting)
 		}
 
 		//Once noise_vs_bias histo is done, fit it and extract results
-		if(h_noise_vs_bias_current_detid->GetEntries() != 0)
+		if(g_noise_vs_bias_currentDetid->GetN() != 0)
 		{
-			h_noise_vs_bias_current_detid->SetMinimum(ymin - 0.2); //Set custom ymin because there are empty bins
+			g_noise_vs_bias_currentDetid->SetMinimum(ymin - 0.2); //Set custom ymin because there are empty bins
+			g_noise_vs_bias_currentDetid->GetXaxis()->SetRangeUser(0., 300.);
 
-			fit_results = Fit_Noise_VS_Bias_Histogram_And_Make_Control_Plots(h_noise_vs_bias_current_detid, counter_control_plots, current_detid);
+			fit_results = Fit_Noise_VS_Bias_Histogram_And_Make_Control_Plots(g_noise_vs_bias_currentDetid, counter_control_plots, current_detid);
 			detid = current_detid;
 
 			//Fill the output TTree with fit result for current detid
@@ -390,7 +431,7 @@ void Produce_Noise_VS_Bias_Histograms_For_All_Detids_And_Store_Results(TString r
 		}
 		else {cout<<FRED("Noise VS Bias histo empty for detid "+Convert_Number_To_TString(current_detid)<<" !")<<endl;}
 
-		delete h_noise_vs_bias_current_detid; h_noise_vs_bias_current_detid = NULL;
+		delete g_noise_vs_bias_currentDetid; g_noise_vs_bias_currentDetid = NULL;
 	}
 
 	f_fit_results->cd();
@@ -408,6 +449,140 @@ void Produce_Noise_VS_Bias_Histograms_For_All_Detids_And_Store_Results(TString r
 
 
 
+//--------------------------------------
+//  ######  ######## ##     ## ########  #### ########  ######
+// ##    ##    ##    ##     ## ##     ##  ##  ##       ##    ##
+// ##          ##    ##     ## ##     ##  ##  ##       ##
+//  ######     ##    ##     ## ##     ##  ##  ######    ######
+//       ##    ##    ##     ## ##     ##  ##  ##             ##
+// ##    ##    ##    ##     ## ##     ##  ##  ##       ##    ##
+//  ######     ##     #######  ########  #### ########  ######
+//--------------------------------------
+
+double Get_Vfd_Pull_From_MCToys_And_Return_Mean(int ntoys, double error)
+{
+	// create a random number generator
+	// gRandom = new TRandom3();
+	gRandom->SetSeed(0);
+
+	int nbins = 60; double xmin = 2.5, xmax = 302.5;
+	TH1F* h_vfd_toys = new TH1F("", "", 100, -0, 500);
+
+	TF1* noise_fit = new TF1("myfunc", Fitting_Model, xmin, xmax, 3);
+	noise_fit->SetParNames("Constant","#beta", "V_{FD}");
+
+
+	double* par = new double[3];
+	double* x = new double[1];
+
+	for(int itoy=0; itoy<ntoys; itoy++)
+	{
+		//--- Init fit parameters
+		// noise_fit->SetParameters(5., 1., 100.); //-- re-init fit parameters ; need to be tuned, for fit convergence
+		noise_fit->SetParameters(5.1, 1., 200.); //-- re-init fit parameters ; need to be tuned, for fit convergence
+
+		TH1F* h_1step = new TH1F("", "", nbins, xmin, xmax);
+		// par[0] = 5.; par[1] = 3.3; par[2] = 100.; //Choose true parameters to construct the toys histo
+		//--- Set true parameters
+		par[0] = 5.; par[1] = 3.3; par[2] = 100.; //Choose true parameters to construct the toys histo
+		double vfd = 0;
+
+		for(int istep=0; istep<step_list.size(); istep++)
+		{
+			x[0] = Convert_TString_To_Number(step_list[istep]);
+
+			int ibin = Convert_TString_To_Number(step_list[istep]) / ((xmax - xmin) / nbins); //Compute bin corresponding to this voltage
+			h_1step->SetBinContent(ibin, gRandom->Gaus(Fitting_Model(x, par), error) );
+			h_1step->SetBinError(ibin, error);
+		}
+
+		h_1step->Fit(noise_fit, "q");
+
+		vfd = noise_fit->GetParameter(2);
+
+		h_vfd_toys->Fill(vfd);
+		if(itoy % 1000 == 0)
+		{
+			cout<<"vfd "<<vfd<<endl;
+			cout<<"Fit proba : "<<noise_fit->GetProb()<<endl;
+		}
+
+		if(itoy==0)
+		{
+			TCanvas* c_control = new TCanvas("c_control", "", 1000, 800); c_control->cd();
+			c_control->SetTopMargin(0.1);
+			c_control->SetBottomMargin(0.1);
+			h_1step->SetMinimum(par[0] - 0.5); h_1step->SetMaximum(par[0] + 1);
+			h_1step->Draw();
+			Draw_ExtraText(c_control);
+			c_control->SaveAs("toy_control.png");
+			delete c_control; c_control = NULL;
+		}
+
+		delete h_1step; h_1step = NULL;
+	}
+
+	TF1* gaus_fit = new TF1("myfunc", "gaus", h_vfd_toys->GetXaxis()->GetXmin(), h_vfd_toys->GetXaxis()->GetXmax() );
+	// TF1* gaus_fit = new TF1("myfunc", "landau", h_vfd_toys->GetXaxis()->GetXmin(), h_vfd_toys->GetXaxis()->GetXmax() );
+	h_vfd_toys->Fit(gaus_fit, "q");
+	double mean_pull = gaus_fit->GetParameter(0);
+
+
+	TCanvas* c = new TCanvas("c", "", 1000, 800); c->cd();
+	c->SetTopMargin(0.1);
+	c->SetBottomMargin(0.1);
+	h_vfd_toys->Draw();
+	Draw_ExtraText(c);
+
+	// c->SaveAs("vfd_"+Convert_Number_To_TString(ntoys)+"toys.png" );
+	c->SaveAs("vfd_toys.png" );
+
+	delete noise_fit; noise_fit = NULL;
+	delete gaus_fit; gaus_fit = NULL;
+	delete h_vfd_toys; h_vfd_toys = NULL;
+	delete c; c = NULL;
+	delete[] par; par = NULL;
+	delete[] x; x = NULL;
+
+	return mean_pull;
+}
+
+
+void ToyStudy_Change_Scan_Procedure(int ntoys, double error, int scan_choice)
+{
+	if(scan_choice == 0)
+	{
+		step_list.push_back("275");
+		step_list.push_back("280");
+		step_list.push_back("290");
+		step_list.push_back("295");
+	}
+	else if(scan_choice == 1)
+	{
+		step_list.push_back("5");
+		step_list.push_back("15");
+		step_list.push_back("25");
+		step_list.push_back("35");
+	}
+	else if(scan_choice == 2)
+	{
+		step_list.push_back("85");
+		step_list.push_back("95");
+		step_list.push_back("105");
+		step_list.push_back("115");
+	}
+	else {return;}
+
+	Get_Vfd_Pull_From_MCToys_And_Return_Mean(ntoys, error);
+
+	system( ("cp vfd_toys.png vfd_toys_scan"+Convert_Number_To_TString(scan_choice)+".png").Data() );
+
+	return;
+}
+
+
+
+
 //-------------------------------
 // ##     ##    ###    #### ##    ##
 // ###   ###   ## ##    ##  ###   ##
@@ -420,12 +595,18 @@ void Produce_Noise_VS_Bias_Histograms_For_All_Detids_And_Store_Results(TString r
 
 int main()
 {
-	Fill_Step_List_Vector();
 	Modified_tdr_style();
 
+	// TString run = "203243";
 	TString run = "303272";
 
+	Fill_Step_List_Vector(run);
+
 	Produce_Noise_VS_Bias_Histograms_For_All_Detids_And_Store_Results(run);
+
+	//--- TOYS STUDIES
+	// Get_Vfd_Pull_From_MCToys_And_Return_Mean(10000, 0.01);
+	// ToyStudy_Change_Scan_Procedure(10000, 0.01, 2);
 
 	return 0;
 }

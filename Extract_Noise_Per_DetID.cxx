@@ -7,8 +7,8 @@ Nicolas Tonon, IPHC
 
 
 #define StripsPerApv 128
-#define MinNoise 0
-#define MaxNoise 10
+// #define MinNoise 0
+// #define MaxNoise 10
 
 int counter = 0;
 int counter_control_plots = 0;
@@ -41,14 +41,10 @@ vector< pair<double, double> > Fit_Profile(TProfile* profile, double fed_key, TF
 {
 	// cout<<"--- Entering Fit_Profile()"<<endl;
 
-	bool makeGaussPlot = true;
+	bool use_only_strips_lowest_noise = true; //-- use only few "best" strips, supposed to be free of some noise sources
+	int nstrips_to_keep = 10; //How many strips with lowest
 
-	vector< pair<double, double> > v_results(5); //Store results in pairs of double (2 APVs)
-
-	TF1* gaussian_fit = new TF1("mygaus", "gaus", MinNoise, MaxNoise);
-	TF1* gaussian_fit_trimmed = new TF1("mygaus_trimmed", "gaus", MinNoise, MaxNoise); //fit on trimmed distrib. (values within 3sigmas)
-
-	// TH1F* fit_chi2norm = new TH1F("fit_chi2norm", "fit_chi2norm" , 500, 0, 10);
+	vector< pair<double, double> > v_results(6); //Store results in pairs of double (2 APVs)
 
 	//loop on 2 APVs per profile
 	for(int iAPV=0; iAPV<2; iAPV++)
@@ -56,23 +52,21 @@ vector< pair<double, double> > Fit_Profile(TProfile* profile, double fed_key, TF
 		if(mapFedkeyToDeviceid.find(fed_key)== mapFedkeyToDeviceid.end() )
 		{
 			cout<<FRED("Error: unknown fed key: " << fed_key << " ") << endl;
-
-			delete gaussian_fit; delete gaussian_fit_trimmed;
-			// delete fit_chi2norm; fit_chi2norm = NULL;
-			gaussian_fit = NULL; gaussian_fit_trimmed = NULL;
-
 			return v_results;
 		}
 
 		//1 histo made with values from all strips, 1 made only with values within 3 sigmas ('trimmed')
-		TH1F* h_dist = new TH1F( ("testDistribution_APV" + Convert_Number_To_TString(iAPV + 1)), "test distribution", 200, MinNoise, MaxNoise);
-		TH1F* h_dist_trimmed = new TH1F( ("testDistribution_APV" + Convert_Number_To_TString(iAPV + 1) + "_trimmed"), "test trimmed distribution", 100, MinNoise, MaxNoise);
+		TH1F* h_dist = new TH1F( ("testDistribution_APV" + Convert_Number_To_TString(iAPV + 1)), "test distribution", 200, 0, 10); //CHANGED
+		TH1F* h_dist_trimmed = new TH1F( ("testDistribution_APV" + Convert_Number_To_TString(iAPV + 1) + "_trimmed"), "test trimmed distribution", 100, 0, 10);
+
+		TF1* gaussian_fit = new TF1("mygaus", "gaus", h_dist->GetXaxis()->GetXmin(), h_dist->GetXaxis()->GetXmax()); //CHANGED
+		TF1* gaussian_fit_trimmed = new TF1("mygaus_trimmed", "gaus", h_dist_trimmed->GetXaxis()->GetXmin(), h_dist_trimmed->GetXaxis()->GetXmax()); //fit on trimmed distrib. (values within 3sigmas)
+
 
 		//Compute first and last strip numbers, for loop
 		unsigned int first_strip=1+(iAPV*StripsPerApv); //Either 1 (APV1) or 129 (APV2)
 	    unsigned int last_strip=StripsPerApv+first_strip; //Either 129 (APV1) or 257 (APV2)
 		// cout<<"First strip = "<<first_strip<<" / last strip = "<<last_strip<<endl;
-
 
 	    //For each strip, add noise in histogram
 		for(int istrip=first_strip; istrip<last_strip; istrip++)
@@ -82,17 +76,38 @@ vector< pair<double, double> > Fit_Profile(TProfile* profile, double fed_key, TF
 
 		//Fit the histograms with gaussian
 		h_dist->Fit(gaussian_fit, "q0"); //Quiet, don't draw fit
-		// cout<<"gaussian_fit->GetParameter(1) "<<gaussian_fit->GetParameter(1)<<endl;
-		// cout<<"gaussian_fit->GetParameter(2) "<<gaussian_fit->GetParameter(2)<<endl;
+		double mean_tmp = gaussian_fit->GetParameter(1), sigma_tmp = gaussian_fit->GetParameter(2);
 
 
-		//Idem for trimmed histo
-		for(int istrip=first_strip; istrip<last_strip; istrip++)
+		//Store noise values of all strips, then sort them from lowest to highest noise
+		vector<double> v_lowest_noise_values;
+		if(use_only_strips_lowest_noise)
 		{
-			//Trimmed histo : remove values > 3 sigmas
-			if(profile->GetBinContent(istrip) < gaussian_fit->GetParameter(1) + 3. * gaussian_fit->GetParameter(2) && profile->GetBinContent(istrip) > gaussian_fit->GetParameter(1) - 3. * gaussian_fit->GetParameter(2) )
+			for(int istrip=first_strip; istrip<last_strip; istrip++)
 			{
-				h_dist_trimmed->Fill(profile->GetBinContent(istrip) );
+				v_lowest_noise_values.push_back(h_dist->Fill(profile->GetBinContent(istrip)) ); //Store noise values for all strips
+			}
+
+			std::sort(v_lowest_noise_values.begin(), v_lowest_noise_values.end() ); //Sorting algo
+		}
+
+		//Idem for trimmed histo -- remove points above 3 sigmas from gaussian mean
+		if(!use_only_strips_lowest_noise) //Use all strips within 3 sigmas
+		{
+			for(int istrip=first_strip; istrip<last_strip; istrip++)
+			{
+				//Trimmed histo : remove values > 3 sigmas
+				if(profile->GetBinContent(istrip) < mean_tmp + 3. * sigma_tmp && profile->GetBinContent(istrip) > mean_tmp - 3. * sigma_tmp )
+				{
+					h_dist_trimmed->Fill(profile->GetBinContent(istrip) );
+				}
+			}
+		}
+		else //keep only the "best" nstrips for fit
+		{
+			for(int istrip=0; istrip<nstrips_to_keep; istrip++)
+			{
+				h_dist_trimmed->Fill(v_lowest_noise_values[istrip] );
 			}
 		}
 
@@ -119,6 +134,7 @@ vector< pair<double, double> > Fit_Profile(TProfile* profile, double fed_key, TF
 			v_results[2].first = gaussian_fit_trimmed->GetParError(1);
 			v_results[3].first = chi2_norm;
 			v_results[4].first = h_dist_trimmed->GetRMS();
+			v_results[5].first = gaussian_fit->GetProb();
 
 			// cout<<"iAPV==0"<<endl;
 			// cout<<v_results[0].first<<endl;
@@ -133,6 +149,7 @@ vector< pair<double, double> > Fit_Profile(TProfile* profile, double fed_key, TF
 			v_results[2].second = gaussian_fit_trimmed->GetParError(1);
 			v_results[3].second = chi2_norm;
 			v_results[4].second = h_dist_trimmed->GetRMS();
+			v_results[5].second = gaussian_fit_trimmed->GetProb();
 
 			// cout<<"iAPV==1"<<endl;
 			// cout<<v_results[0].second<<endl;
@@ -145,7 +162,7 @@ vector< pair<double, double> > Fit_Profile(TProfile* profile, double fed_key, TF
 
 
 		//Make control plots/histos
-		if(counter_control_plots < 10 && makeGaussPlot)
+		if(counter_control_plots < 10)
 		{
 			// cout << FBLU("--- Producing control plots") << endl;
 
@@ -170,12 +187,14 @@ vector< pair<double, double> > Fit_Profile(TProfile* profile, double fed_key, TF
 		}
 
 		delete h_dist; delete h_dist_trimmed; h_dist = NULL;  h_dist_trimmed = NULL;
+
+		delete gaussian_fit; delete gaussian_fit_trimmed;
+		gaussian_fit = NULL; gaussian_fit_trimmed = NULL;
 	}
 
 
-	delete gaussian_fit; delete gaussian_fit_trimmed;
-	// delete fit_chi2norm; fit_chi2norm = NULL;
-	gaussian_fit = NULL; gaussian_fit_trimmed = NULL;
+	// delete gaussian_fit; delete gaussian_fit_trimmed;
+	// gaussian_fit = NULL; gaussian_fit_trimmed = NULL;
 
 	return v_results; //Return gaussian fit results for both APVs
 }
@@ -209,7 +228,7 @@ void Extract_Infos_From_Profile_Into_TTree(TDirectory* dir, TTree* tree, TFile* 
 	TIter* iter_list = new TIter(list_of_keys);
 
 	//Tmp store results from profile fits
-	vector< pair<double, double> > v_infos_from_profile(5);
+	vector< pair<double, double> > v_infos_from_profile(6);
 
 	//Loop on all histograms from this directory (2 APVs, noise/pedestal/...)
 	while(obj_tmp = iter_list->Next() )
@@ -236,6 +255,11 @@ void Extract_Infos_From_Profile_Into_TTree(TDirectory* dir, TTree* tree, TFile* 
 		index_tmp = ts.Index("_LldChannel"); //Find end of fedkey string
 		fed_key = ts(0, index_tmp); //extract fedkey
 		int fed_key_decimal = Convert_Hexa_To_UnsignedLong(fed_key); //Fed keys stored in hexadecimal format, needs conversion
+
+
+		//FIXME -- just look few TIB APVs for now
+		// cout<<Convert_Number_To_TString(mapFedkeyToDeviceid[fed_key_decimal])<<endl;
+		if( !Convert_Number_To_TString(mapFedkeyToDeviceid[fed_key_decimal]).Contains("36912") ) {delete iter_list; return;}
 
 		//--- Extract laser channel from object name, using TString functions
 		index_tmp+= ((string) "_LldChannel").size();
@@ -286,6 +310,7 @@ void Extract_Infos_From_Profile_Into_TTree(TDirectory* dir, TTree* tree, TFile* 
 		tree->SetBranchAddress("noise_err", &v_infos_from_profile[2].first);
 		tree->SetBranchAddress("noise_chi2", &v_infos_from_profile[3].first);
 		tree->SetBranchAddress("noise_rms", &v_infos_from_profile[4].first);
+		tree->SetBranchAddress("noise_fitProb", &v_infos_from_profile[5].first);
 		// tree->SetBranchAddress("pedestal_mean_err", &pedestal_mean_err); //alternative error
 
 		tree->Fill();
@@ -296,6 +321,7 @@ void Extract_Infos_From_Profile_Into_TTree(TDirectory* dir, TTree* tree, TFile* 
 		tree->SetBranchAddress("noise_err", &v_infos_from_profile[2].second);
 		tree->SetBranchAddress("noise_chi2", &v_infos_from_profile[3].second);
 		tree->SetBranchAddress("noise_rms", &v_infos_from_profile[4].second);
+		tree->SetBranchAddress("noise_fitProb", &v_infos_from_profile[5].second);
 		// tree->SetBranchAddress("pedestal_mean_err", &pedestal_mean_err);
 
 		tree->Fill();
@@ -335,11 +361,11 @@ void Loop_On_All_Directories(TDirectory* current_dir, TTree* tree, TFile* const 
 	TDirectory* next_directory = NULL;
 	bool contains_subdirectory = false;
 
-	// counter++; if(counter%1000 == 0) {cout<<"--- "<<counter<<" directories checked"<<endl;}
-	counter++; if(counter%100 == 0) {cout<<"--- "<<counter<<" directories checked"<<endl;}
+	counter++; if(counter%1000 == 0) {cout<<"--- "<<counter<<" directories checked"<<endl;}
+	// counter++; if(counter%100 == 0) {cout<<"--- "<<counter<<" directories checked"<<endl;}
 
 	//FIXME
-	if(counter>20) {delete iter_list; return;}
+	// if(counter>20) {delete iter_list; return;}
 
 	//Loop on all directories found in input file
 	while (obj_tmp = iter_list->Next() )
@@ -394,6 +420,7 @@ void Store_Noise_Infos_All_DetIDs(TString path, TString run, TString step, bool 
 	cout<<FYEL("#######################")<<endl<<endl;
 
 	TString file_path = Find_Path_EOS_File(path, run, step); //Get filepath for current Vstep, from EOS
+	if(file_path == "") {cout<<FRED("FilePath not found ! Abort")<<endl; return;}
 
 	//Input file from grid, containing noise and pedestal histograms (for 1 step)
 	TString noisefile_name = "";
@@ -407,9 +434,9 @@ void Store_Noise_Infos_All_DetIDs(TString path, TString run, TString step, bool 
 
 	if(copy_gridfile_locally) //Copy locally in tmp file
 	{
-		cout<<FBLU("--- Copying TFile locally : "<<file_path<<"SiStripCommissioningSource_1.root (faster processing)")<<endl;
+		cout<<FBLU("--- Copying TFile locally : "<<file_path<<" (faster processing)")<<endl;
 
-		TString cmd = "xrdcp -f root://eoscms//eos/cms" + file_path + "SiStripCommissioningSource_1.root .";
+		TString cmd = "xrdcp -f root://eoscms//eos/cms" + file_path + " .";
 		system(cmd.Data() );
 
 		noisefile_name = "./SiStripCommissioningSource_1.root";
@@ -417,7 +444,7 @@ void Store_Noise_Infos_All_DetIDs(TString path, TString run, TString step, bool 
 	}
 	else //Don't copy locally (distant access)
 	{
-		noisefile_name = "root://eoscms//eos/cms" + file_path + "SiStripCommissioningSource_1.root";
+		noisefile_name = "root://eoscms//eos/cms" + file_path;
 	}
 
 	cout<<FBLU("--- Opening TFile : "<<noisefile_name<<"")<<endl;
@@ -496,8 +523,8 @@ void Produce_Files_For_All_Steps(TString path, TString run)
 	{
 		if(!step_isUsed[istep]) {continue;}
 
-		// Store_Noise_Infos_All_DetIDs(path, run, step_list[istep], true);
-		Store_Noise_Infos_All_DetIDs(path, run, step_list[istep], false);
+		Store_Noise_Infos_All_DetIDs(path, run, step_list[istep], true);
+		// Store_Noise_Infos_All_DetIDs(path, run, step_list[istep], false);
 	}
 
 	return;
@@ -524,11 +551,14 @@ void Produce_Files_For_All_Steps(TString path, TString run)
 int main()
 {
 	loadMapFedkeyToDeviceid("fedkeys.txt"); //Load fedkey <-> detid map
-	Fill_Step_List_Vector(); //Load Voltage steps
 
-	// TString path = "/store/group/dpg_tracker_strip/comm_tracker/Strip/RadMonitoring/NoiseBiasScan/2017/VRRandom0/crab_NoiseScan_20170919_run303272_v1_210/171208_143827/0000/";
 	TString path = "/store/group/dpg_tracker_strip/comm_tracker/Strip/RadMonitoring/NoiseBiasScan/2017/VRRandom0";
 	TString run = "303272";
+
+	// TString path = "/store/group/dpg_tracker_strip/comm_tracker/Strip/RadMonitoring/NoiseBiasScan/Sep2012/TIB";
+	// TString run = "203243";
+
+	Fill_Step_List_Vector(run); //Load Voltage steps
 
 	// Store_Noise_Infos_All_DetIDs(path, run, "210", false);
 
@@ -537,4 +567,3 @@ int main()
 
 	return 0;
 }
-

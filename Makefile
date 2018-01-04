@@ -21,6 +21,7 @@ OBJS = $(SRCS:.cc=.o) #Object files are all files with .o extension, which have 
 READ_NOISE = readNoise.exe #Name of executable file
 EXTRACT_NOISE = Extract_Noise_Per_DetID.exe
 NOISE_PLOT = Produce_Noise_vs_Bias_Plots.exe
+#STUDIES = Studies_Fit_Model.exe
 
 # .PHONY : $(READ_NOISE)  #Force to always recompile object
 
@@ -28,7 +29,7 @@ NOISE_PLOT = Produce_Noise_vs_Bias_Plots.exe
 
 
 #Instructions
-all: $(EXTRACT_NOISE) $(NOISE_PLOT)
+all: $(EXTRACT_NOISE) $(NOISE_PLOT) #$(STUDIES)
 
 #Obtain executables from object files
 # $(READ_NOISE) : readNoise.cxx
@@ -46,6 +47,10 @@ $(NOISE_PLOT) : Produce_Noise_vs_Bias_Plots.cxx Helper_Functions.h
 	@$(CC) Produce_Noise_vs_Bias_Plots.cxx -o $@ $(ROOTFLAGS) $(LFLAGS)
 	@echo "-- Done --"
 
+$(STUDIES) : Produce_Noise_vs_Bias_Plots.cxx Helper_Functions.h
+	@echo "-- Creating executable ./$(STUDIES) --"
+	@$(CC) Studies_Fit_Model.cxx -o $@ $(ROOTFLAGS) $(LFLAGS)
+	@echo "-- Done --"
 
 #Obtain objects from source and header files
 %.o: %.cc

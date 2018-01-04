@@ -376,11 +376,14 @@ void Re_Submit_All_toCrab(TString date, TString run, TString version)
 
 int main()
 {
+	Fill_Step_List_Vector();
+	
+	
 	TString date = "20170919", run = "303272", version = "v2";
 
 
-	Create_all_cfg_files(date, run);
-	// Create_all_crab_files(date, run, version);
+	//Create_all_cfg_files(date, run);
+	Create_all_crab_files(date, run, version);
 
 	// Submit_All_toCrab();
 
