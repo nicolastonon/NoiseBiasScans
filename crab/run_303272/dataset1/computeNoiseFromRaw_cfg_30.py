@@ -17,8 +17,8 @@ process.SiStripDetInfoFileReader = cms.Service("SiStripDetInfoFileReader")
 process.sistripconn = cms.ESProducer("SiStripConnectivity")
 
 process.source = cms.Source("PoolSource",
-  fileNames = cms.untracked.vstring('/store/data/Run2017D/VRRandom1/RAW/v1/000/303/261/00000/003371CD-619D-E711-89EB-02163E0146CD.root'),
-  eventsToProcess = cms.untracked.VEventRange('303272:61762-303272:81449')
+  fileNames = cms.untracked.vstring(),
+  eventsToProcess = cms.untracked.VEventRange('303272:220503-303272:240208')
 )
 process.maxEvents = cms.untracked.PSet( input = cms.untracked.int32(500) )
 

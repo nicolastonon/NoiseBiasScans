@@ -100,7 +100,8 @@ void Create_all_cfg_files(TString date, TString stepfile_run)
 	mkdir( ("run_"+stepfile_run+"/").Data(), 0777); //Create directory if inexistant
 
 
-	TString step_file_name = "./run_"+stepfile_run+"/steps_" + date + "_" + stepfile_run + ".txt";
+	TString step_file_name = "./Vstep_lists/steps_" + date + "_" + stepfile_run + ".txt";
+	if(!Check_File_Existence(step_file_name) ) {cout<<FRED("Missing Vstep file "<<step_file_name<<" !")<<endl; return;}
 	ifstream file_step(step_file_name.Data()) ;
 	ifstream file_cfg_template("computeNoiseFromRaw_cfg_template.py");
 
@@ -230,7 +231,7 @@ void Create_all_crab_files(TString date, TString run, TString version)
 {
 	mkdir( ("run_"+run+"/").Data(), 0777); //Create directory if inexistant
 
-	TString step_file_name = "./run_"+run+"/steps_" + date + "_" + run + ".txt";
+	TString step_file_name = "./Vstep_lists/steps_" + date + "_" + run + ".txt";
 	ifstream file_step(step_file_name.Data()) ;
 
 	TString crab_template_name = "./crab3_" + date + "_" + run + "_template.py";
@@ -334,20 +335,31 @@ void Create_all_crab_files(TString date, TString run, TString version)
 //------------------------------------------
 
 
-void Submit_All_toCrab()
+void Submit_All_toCrab(TString path)
 {
+	cout<<FBLU("--- To submit jobs : ./Create_JobFiles_AllSteps.exe [path_to_crab_files]")<<endl;
+
+	path.Remove(TString::kTrailing, '/'); //Remove '/' char at end of TString if present
+
 	for(int istep=0; istep<step_list.size(); istep++)
 	{
 		if(!step_isUsed[istep]) {continue;}
 
-		cout<<FYEL("--- Submitting jobs "<<step_list[istep]<<"V to crab")<<endl;
+		cout<<FYEL("--- Submitting job "<<step_list[istep]<<"V to crab")<<endl;
+		TString crabfile_name = "crab3_20170919_303272_"+step_list[istep]+".py";
+		TString configfile_name = "computeNoiseFromRaw_cfg_"+step_list[istep]+".py";
+		if(!Check_File_Existence(path+"/"+crabfile_name) ) {cout<<FRED("Crab file "<<path<<"/"<<crabfile_name<<" not found !")<<endl; continue;}
+		if(!Check_File_Existence(path+"/"+configfile_name) ) {cout<<FRED("Crab file "<<path<<"/"<<configfile_name<<" not found !")<<endl; continue;}
 
-		TString cmd = "crab submit ./crab3_20170919_303272_"+step_list[istep]+".py";
-		system(cmd);
+		TString cmd = "cp "+ path+"/"+crabfile_name + " ."; system(cmd); //Copy locally crab file to submit
+		cmd = "cp "+ path+"/"+configfile_name + " ."; system(cmd); //Copy locally cfg file to submit
+		cmd = "crab submit ./" + crabfile_name; system(cmd); //Submit tmp crab file
+		cmd = "rm ./" + crabfile_name; system(cmd); //Remove tmp crab file
+		cmd = "rm ./" + configfile_name; system(cmd); //Remove tmp cfg file
 	}
 }
 
-void Re_Submit_All_toCrab(TString date, TString run, TString version)
+void Re_Submit_All_toCrab(TString path, TString date, TString run, TString version)
 {
 	for(int istep=0; istep<step_list.size(); istep++)
 	{
@@ -374,19 +386,24 @@ void Re_Submit_All_toCrab(TString date, TString run, TString version)
 //------------------------------------------
 
 
-int main()
+int main(int argc, char **argv)
 {
-	Fill_Step_List_Vector();
+	TString path_from_command = "";
+	if(argc == 2) //If an arg was given at command line
+    {
+        path_from_command = argv[1];
+    }
 
 	TString date = "20170919", run = "303272", version = "v2";
 
+	Fill_Step_List_Vector(run);
 
-	Create_all_cfg_files(date, run);
+	// Create_all_cfg_files(date, run);
 	// Create_all_crab_files(date, run, version);
 
-	// Submit_All_toCrab();
+	Submit_All_toCrab(path_from_command);
 
-	// Re_Submit_All_toCrab(date, run, version);
+	// Re_Submit_All_toCrab(path_from_command, date, run, version);
 
 	return 0;
 }

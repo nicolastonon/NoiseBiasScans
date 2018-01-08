@@ -75,13 +75,16 @@ void Draw_ExtraText(TCanvas* c)
 
 
 	bool writeExtraText = false;
-	TString extraText   = "Preliminary 2017";
+	TString extraText   = "Preliminary 2018";
 	latex.SetTextFont(52);
 	latex.SetTextSize(0.04);
 	latex.DrawLatex(c->GetLeftMargin() + 0.1, 0.932, extraText);
 
 	return;
 }
+
+
+
 
 
 
@@ -244,26 +247,28 @@ double Fitting_Model(double* x, double *par) //Arguments by convention
 //-------------------------------------------------------
 
 
-
- //   #      #     #
- //  ##      #     #  ####  ##### ###### #####
- // # #      #     # #        #   #      #    #
- //   #      #     #  ####    #   #####  #    #
- //   #       #   #       #   #   #      #####
- //   #        # #   #    #   #   #      #
- // #####       #     ####    #   ###### #
-
-
 /**
  * Takes as input the Noise_vs_bias histo for given detid/run, and fits it with model ; returns the Vfd param and its error, and stores a few plots for control
  * @param graph_to_fit          -- TGraphErrors* noise_vs_bias to fit
  * @param counter_control_plots -- counter (don't store all control plots)
  * @param detid                 -- detid corresponding to the histo
  */
-pair<double, double> Fit_Noise_VS_Bias_Histogram_And_Make_Control_Plots(TGraphErrors* graph_to_fit, int& counter_control_plots, double detid)
+pair<double, double> Fit_Noise_VS_Bias_Histogram_And_Make_Control_Plots(TGraphErrors* graph_to_fit, int& counter_control_plots, double detid, TString run, TString date)
 {
+	bool print_correl_matrices = false;
+
 	gStyle->SetOptFit(1);
 	gStyle->SetFuncWidth(3);
+
+	TString subdet;
+	if(Convert_Number_To_TString(detid).Contains("36912")) {subdet = "TIB";}
+	else if(Convert_Number_To_TString(detid).Contains("43628")) {subdet = "TOB";}
+	else if(Convert_Number_To_TString(detid).Contains("47014")) {subdet = "TEC";}
+
+	TString corr_name= "_" + subdet + "_" + date + "_run" + run;
+	int corrected = CorrectGraphForLeakageCurrent(graph_to_fit, detid, corr_name);
+	if(corrected) graph_to_fit->SetMarkerColor(13); //Gray markers if corrected
+	else cout<<FRED("No Leakage Current Correction found for run "<<run<<" !")<<endl;
 
 	//Fitting model --- (name, fcn, xmin, xmax, npar)
 	TF1* noise_fit;
@@ -279,11 +284,18 @@ pair<double, double> Fit_Noise_VS_Bias_Histogram_And_Make_Control_Plots(TGraphEr
 		noise_fit = new TF1("myfunc", Fitting_Model, graph_to_fit->GetXaxis()->GetXmin(), graph_to_fit->GetXaxis()->GetXmax(), 4);
 		noise_fit->SetParNames("Constant","#beta", "V_{FD}", "Slope");
 		noise_fit->SetParameters(6., 5., 100., 1.); //-- init. parameters needed for convergence
-
 	}
 
-
-	graph_to_fit->Fit(noise_fit, "q"); //quiet
+	//--- From root doc :
+	//Smart pointer to TFitResult, containing infos on fit (cov matrix, status, ...)
+	// “S” The result of the fit is returned in the TFitResultPtr.
+	// “E” Perform better errors estimation using the Minos technique
+	// “M” Improve fit results, by using the IMPROVE algorithm of TMinuit.
+	TFitResultPtr fit_result = graph_to_fit->Fit(noise_fit, "Q S"); //quiet
+	// TMatrixDSym cov_matrix = fit_result->GetCovarianceMatrix();
+	TMatrixDSym correl_matrix = fit_result->GetCorrelationMatrix();
+	// cout<<"Correlation 0 vs 1 : "<<fit_result.Correlation(0,1)<<endl;
+	if(print_correl_matrices) correl_matrix.Print();
 
 	pair<double, double> result;
 	result.first = noise_fit->GetParameter(2);
@@ -292,8 +304,8 @@ pair<double, double> Fit_Noise_VS_Bias_Histogram_And_Make_Control_Plots(TGraphEr
 	// cout<<"noise_fit->GetParameter(1) = "<<noise_fit->GetParameter(1)<<" / error = "<<noise_fit->GetParError(1)<<endl;
 	// cout<<"noise_fit->GetParameter(2) = "<<noise_fit->GetParameter(2)<<" / error = "<<noise_fit->GetParError(2)<<endl;
 
-	// if(counter_control_plots < 5 && noise_fit->GetParameter(2) > 0) //Only plot few histos, not all
-	if(noise_fit->GetParameter(2) > 0) //Only plot few histos, not all //FIXME
+	// if(counter_control_plots < 5 && noise_fit->GetParameter(2) > 0) //Only plot few histos, not all //FIXME
+	if(noise_fit->GetParameter(2) > 0)
 	{
 		TCanvas* c = new TCanvas("c", "", 1000, 800); c->cd();
 		c->SetTopMargin(0.1);
@@ -338,19 +350,11 @@ pair<double, double> Fit_Noise_VS_Bias_Histogram_And_Make_Control_Plots(TGraphEr
 
 
 
- //    #                     #     #
- //   # #   #      #         #     #  ####  ##### ###### #####   ####
- //  #   #  #      #         #     # #        #   #      #    # #
- // #     # #      #         #     #  ####    #   #####  #    #  ####
- // ####### #      #          #   #       #   #   #      #####       #
- // #     # #      #           # #   #    #   #   #      #      #    #
- // #     # ###### ######       #     ####    #   ###### #       ####
-
 /**
  * Main function. For all detids, it will collect the fit results and store the Vfd values into an output TTree
  * @param run -- run number
  */
-void Produce_Noise_VS_Bias_Histograms_For_All_Detids_And_Store_Results(TString run)
+void Produce_Noise_VS_Bias_Histograms_For_All_Detids_And_Store_Results(TString run, TString date)
 {
 	cout<<endl<<FYEL("#######################")<<endl;
 	cout<<FYEL("--- Produce Noise VS Bias plots, Fit them, Store results and control plots")<<endl;
@@ -421,9 +425,9 @@ void Produce_Noise_VS_Bias_Histograms_For_All_Detids_And_Store_Results(TString r
 		if(g_noise_vs_bias_currentDetid->GetN() != 0)
 		{
 			g_noise_vs_bias_currentDetid->SetMinimum(ymin - 0.2); //Set custom ymin because there are empty bins
-			g_noise_vs_bias_currentDetid->GetXaxis()->SetRangeUser(0., 300.);
+			g_noise_vs_bias_currentDetid->GetXaxis()->SetRangeUser(0., Convert_TString_To_Number(step_list[step_list.size() -1]) );
 
-			fit_results = Fit_Noise_VS_Bias_Histogram_And_Make_Control_Plots(g_noise_vs_bias_currentDetid, counter_control_plots, current_detid);
+			fit_results = Fit_Noise_VS_Bias_Histogram_And_Make_Control_Plots(g_noise_vs_bias_currentDetid, counter_control_plots, current_detid, run, date);
 			detid = current_detid;
 
 			//Fill the output TTree with fit result for current detid
@@ -596,13 +600,14 @@ void ToyStudy_Change_Scan_Procedure(int ntoys, double error, int scan_choice)
 int main()
 {
 	Modified_tdr_style();
+	TString run, date;
 
-	// TString run = "203243";
-	TString run = "303272";
+	// run = "203243"; date = "20120921";
+	run = "303272"; date = "20170919";
 
 	Fill_Step_List_Vector(run);
 
-	Produce_Noise_VS_Bias_Histograms_For_All_Detids_And_Store_Results(run);
+	Produce_Noise_VS_Bias_Histograms_For_All_Detids_And_Store_Results(run, date);
 
 	//--- TOYS STUDIES
 	// Get_Vfd_Pull_From_MCToys_And_Return_Mean(10000, 0.01);
@@ -610,3 +615,4 @@ int main()
 
 	return 0;
 }
+

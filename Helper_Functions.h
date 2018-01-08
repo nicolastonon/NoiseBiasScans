@@ -176,7 +176,7 @@ vector<TString> step_list(0); vector<bool> step_isUsed(0);
  */
 void Fill_Step_List_Vector(TString run)
 {
-	if(step_list.size() != 0) {return;} //Vector must be filled only once !
+	if(step_list.size() != 0) {cout<<FRED("Warning : filling global vector 'step_list' multiple times ! Potentially problematic !")<<endl; step_list.resize(0);} //Vector must be filled only once !
 
 	if(run == "303272")
 	{
@@ -426,4 +426,96 @@ TString Find_Path_EOS_File(TString path_run, TString run, TString step)
 
 
 
+
+
+
+
+/*
+ ██████  ██████  ██████  ██████  ███████  ██████ ████████     ██ ██      ███████  █████  ██   ██
+██      ██    ██ ██   ██ ██   ██ ██      ██         ██        ██ ██      ██      ██   ██ ██  ██
+██      ██    ██ ██████  ██████  █████   ██         ██        ██ ██      █████   ███████ █████
+██      ██    ██ ██   ██ ██   ██ ██      ██         ██        ██ ██      ██      ██   ██ ██  ██
+ ██████  ██████  ██   ██ ██   ██ ███████  ██████    ██        ██ ███████ ███████ ██   ██ ██   ██
+*/
+
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Leackage current corrections
+//------------------------------
+
+int CorrectGraphForLeakageCurrent(TGraph* g, double detid, TFile* f)
+{
+	// Get correction function
+
+	if(!f) {return 0;}
+
+
+	TF1* func = (TF1*) f->Get( ("fit_" +Convert_Number_To_TString(detid)).Data() );
+
+	//WARNING on missing Leakage correction, only if module is in list of monitored detectors
+	if(!func)
+	{
+		bool isInList = false;
+
+		ifstream det_file;
+		TString ts = Convert_Number_To_TString(detid);
+		if(ts.Contains("36912")) {det_file.open("detid_lists/TIB_detit_list.txt");}
+		else if(ts.Contains("43628")) {det_file.open("detid_lists/TOB_detit_list.txt");}
+		else if(ts.Contains("47014")) {det_file.open("detid_lists/TEC_detit_list.txt");}
+		//else {cout<<"Corresponding detector list not found ! Detid = "<<ts<<endl; return 0;}
+		//cout<<"detID = "<<detid<<endl;
+
+		string line; double id=0;
+		while(getline(det_file,line))
+		{
+			std::istringstream iss(line);
+		    iss >> id;
+		    cout<<id<<endl;
+		    if(detid == id || detid/10 == id || detid == id/10) {isInList = true;}
+		}
+
+		// if(isInList) 
+		{cout<<FRED("No leakage current correction for detid : ")<<std::setprecision(11)<<detid<<endl;}
+		return 0;
+	}
+
+	// Correct points
+	double x,y;
+	for(int i=0; i<g->GetN(); i++)
+	{
+	g->GetPoint(i, x, y);
+	g->SetPoint(i, x-func->Eval(x), y);
+	}
+
+	return 1;
+}
+
+int CorrectGraphForLeakageCurrent(TGraph* g, double detid, TString output_name)
+{
+	// Get correction function
+	TString filename="LeakCurCorr"+output_name+".root";
+	//string filepath="/afs/cern.ch/work/j/jlagram/public/SiStripRadMonitoring/LeakageCurrentCorrections/Corrections/"+filename;
+
+	TString filepath="/afs/cern.ch/user/n/ntonon/public/tracker_aging/CMSSW_9_2_10/src/SiStripRadMonitoring/LeakageCurrentBiasScan/Analysis/LeakCurCorr_files/"+filename;
+
+	if (filename.Contains("170000") ) {return 0;} //No leakage correction for this old run, neglected
+	if(!Check_File_Existence(filepath)) {cout<<BOLD(FRED("No leakage current correction file : "))<<filepath<<endl; return 0;}
+
+	TFile* f = new TFile(filepath, "read");
+
+	int out = CorrectGraphForLeakageCurrent(g, detid, f);
+
+	f->Close();
+	f->Delete();
+
+	return out;
+}
+
+
+
+
+
 #endif
+

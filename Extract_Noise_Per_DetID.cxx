@@ -41,8 +41,8 @@ vector< pair<double, double> > Fit_Profile(TProfile* profile, double fed_key, TF
 {
 	// cout<<"--- Entering Fit_Profile()"<<endl;
 
-	bool use_only_strips_lowest_noise = true; //-- use only few "best" strips, supposed to be free of some noise sources
-	int nstrips_to_keep = 10; //How many strips with lowest
+	bool use_only_strips_lowest_noise = false; //-- use only few "best" strips, supposed to be free of some noise sources
+	int nstrips_to_keep = 20; //How many strips with lowest
 
 	vector< pair<double, double> > v_results(6); //Store results in pairs of double (2 APVs)
 
@@ -85,7 +85,7 @@ vector< pair<double, double> > Fit_Profile(TProfile* profile, double fed_key, TF
 		{
 			for(int istrip=first_strip; istrip<last_strip; istrip++)
 			{
-				v_lowest_noise_values.push_back(h_dist->Fill(profile->GetBinContent(istrip)) ); //Store noise values for all strips
+				v_lowest_noise_values.push_back( profile->GetBinContent(istrip) ); //Store noise values for all strips
 			}
 
 			std::sort(v_lowest_noise_values.begin(), v_lowest_noise_values.end() ); //Sorting algo
@@ -310,7 +310,7 @@ void Extract_Infos_From_Profile_Into_TTree(TDirectory* dir, TTree* tree, TFile* 
 		tree->SetBranchAddress("noise_err", &v_infos_from_profile[2].first);
 		tree->SetBranchAddress("noise_chi2", &v_infos_from_profile[3].first);
 		tree->SetBranchAddress("noise_rms", &v_infos_from_profile[4].first);
-		tree->SetBranchAddress("noise_fitProb", &v_infos_from_profile[5].first);
+		tree->SetBranchAddress("noise_fitProba", &v_infos_from_profile[5].first);
 		// tree->SetBranchAddress("pedestal_mean_err", &pedestal_mean_err); //alternative error
 
 		tree->Fill();
@@ -321,7 +321,7 @@ void Extract_Infos_From_Profile_Into_TTree(TDirectory* dir, TTree* tree, TFile* 
 		tree->SetBranchAddress("noise_err", &v_infos_from_profile[2].second);
 		tree->SetBranchAddress("noise_chi2", &v_infos_from_profile[3].second);
 		tree->SetBranchAddress("noise_rms", &v_infos_from_profile[4].second);
-		tree->SetBranchAddress("noise_fitProb", &v_infos_from_profile[5].second);
+		tree->SetBranchAddress("noise_fitProba", &v_infos_from_profile[5].second);
 		// tree->SetBranchAddress("pedestal_mean_err", &pedestal_mean_err);
 
 		tree->Fill();
@@ -410,7 +410,7 @@ void Loop_On_All_Directories(TDirectory* current_dir, TTree* tree, TFile* const 
  * Open TFiles, calls all other functions. Once TTree has been filled, writes it into output file
  * @param run run_number for naming
  */
-void Store_Noise_Infos_All_DetIDs(TString path, TString run, TString step, bool copy_gridfile_locally = true)
+void Store_Noise_Infos_All_DetIDs(TString path, TString run, TString step, TFile* f_control, bool copy_gridfile_locally = true)
 {
 	counter = 0; //Counts nof already checked directories -- global var, needs re-init
 
@@ -436,10 +436,11 @@ void Store_Noise_Infos_All_DetIDs(TString path, TString run, TString step, bool 
 	{
 		cout<<FBLU("--- Copying TFile locally : "<<file_path<<" (faster processing)")<<endl;
 
-		TString cmd = "xrdcp -f root://eoscms//eos/cms" + file_path + " .";
+		noisefile_name = "./SiStripCommissioningSource_1.root";
+
+		TString cmd = "xrdcp -f root://eoscms//eos/cms" + file_path + " " + noisefile_name;
 		system(cmd.Data() );
 
-		noisefile_name = "./SiStripCommissioningSource_1.root";
 		if( !Check_File_Existence(noisefile_name) ) {cout<<BOLD(FRED(<<"FILE "<<noisefile_name<<" NOT FOUND !"))<<endl; return;}
 	}
 	else //Don't copy locally (distant access)
@@ -465,6 +466,7 @@ void Store_Noise_Infos_All_DetIDs(TString path, TString run, TString step, bool 
 	// TBranch *b_pedestal_mean_err = tree->Branch("pedestal_mean_err", 0, "pedestal_mean_err/D"); //alternative error
 	TBranch *b_noise_chi2 = tree->Branch("noise_chi2", 0, "noise_chi2/D");
 	TBranch *b_noise_rms = tree->Branch("noise_rms", 0, "noise_rms/D");
+	TBranch *b_noise_fitProba = tree->Branch("noise_fitProba", 0, "noise_fitProba/D");
 
 
 	f_input->cd();
@@ -478,8 +480,7 @@ void Store_Noise_Infos_All_DetIDs(TString path, TString run, TString step, bool 
 		delete tree; tree = NULL; return;
 	}
 
-	//Output control file, in which we store some control histos
-	TFile* f_control = new TFile("Noise_Control_Plots.root", "RECREATE"); //Store some control histos, ... (via Fit_Profile() )
+
 
 	//Calls all necessary function to read input and store infos
 	cout<<endl<<FBLU("--- Starting loop over all directories --")<<endl;
@@ -492,7 +493,6 @@ void Store_Noise_Infos_All_DetIDs(TString path, TString run, TString step, bool 
 
 	delete tree; tree = NULL;
 
-	f_control->Close(); delete f_control; f_control = NULL;
 	f_output->Close();
 	f_input->Close();
 }
@@ -517,14 +517,14 @@ void Store_Noise_Infos_All_DetIDs(TString path, TString run, TString step, bool 
 /**
  * Run program for all voltage steps (automation)
  */
-void Produce_Files_For_All_Steps(TString path, TString run)
+void Produce_Files_For_All_Steps(TString path, TString run, TFile* f_control)
 {
 	for(int istep=0; istep<step_list.size(); istep++) //step_list from Helper_Functions.h
 	{
 		if(!step_isUsed[istep]) {continue;}
 
-		Store_Noise_Infos_All_DetIDs(path, run, step_list[istep], true);
-		// Store_Noise_Infos_All_DetIDs(path, run, step_list[istep], false);
+		Store_Noise_Infos_All_DetIDs(path, run, step_list[istep], f_control, true);
+		// Store_Noise_Infos_All_DetIDs(path, run, step_list[istep], f_control, false);
 	}
 
 	return;
@@ -552,18 +552,23 @@ int main()
 {
 	loadMapFedkeyToDeviceid("fedkeys.txt"); //Load fedkey <-> detid map
 
-	TString path = "/store/group/dpg_tracker_strip/comm_tracker/Strip/RadMonitoring/NoiseBiasScan/2017/VRRandom0";
-	TString run = "303272";
+	//Output control file, in which we store some control histos
+	//-- need to be global so not re-written at each function call
+	TFile* f_control = new TFile("Noise_Control_Plots.root", "RECREATE"); //Store some control histos, ... (via Fit_Profile() )
 
-	// TString path = "/store/group/dpg_tracker_strip/comm_tracker/Strip/RadMonitoring/NoiseBiasScan/Sep2012/TIB";
-	// TString run = "203243";
+	// TString path = "/store/group/dpg_tracker_strip/comm_tracker/Strip/RadMonitoring/NoiseBiasScan/2017/VRRandom0";
+	// TString run = "303272";
+
+	TString path = "/store/group/dpg_tracker_strip/comm_tracker/Strip/RadMonitoring/NoiseBiasScan/Sep2012/TIB";
+	TString run = "203243";
 
 	Fill_Step_List_Vector(run); //Load Voltage steps
 
 	// Store_Noise_Infos_All_DetIDs(path, run, "210", false);
 
-	Produce_Files_For_All_Steps(path, run);
+	Produce_Files_For_All_Steps(path, run, f_control);
 
-
+	f_control->Close(); delete f_control; f_control = NULL;
 	return 0;
 }
+
