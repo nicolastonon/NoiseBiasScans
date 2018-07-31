@@ -29,7 +29,7 @@ CREATE_FILES = Create_JobFiles_AllSteps.exe #Name of executable file
 all: $(CREATE_FILES)
 
 #Obtain executables from object files
-$(CREATE_FILES) : Create_JobFiles_AllSteps.cxx
+$(CREATE_FILES) : Create_JobFiles_AllSteps.cxx ../Helper_Functions.h
 	@echo "-- Creating executable ./$(CREATE_FILES) --"
 	@$(CC) Create_JobFiles_AllSteps.cxx -o $@ $(ROOTFLAGS) $(LFLAGS)
 	@echo "-- Done --"
@@ -44,3 +44,4 @@ $(CREATE_FILES) : Create_JobFiles_AllSteps.cxx
 #Erase all objects and executable
 clean:
 	@-rm -f *.o *.exe
+

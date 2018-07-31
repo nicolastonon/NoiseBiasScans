@@ -1,0 +1,56 @@
+@(#)CERN job starter $Date: 2010/06/23 14:22:16 $
+Working directory is </pool/lsf/ntonon/184250628> on <b66b657557.cern.ch>
+
+You are working here : 
+/pool/lsf/ntonon/184250628
+Your CMSSW directory is :
+/afs/cern.ch/work/n/ntonon/public/CMSSW_9_2_10/src
+
+/pool/lsf/ntonon/184250628
+cp /afs/cern.ch/work/n/ntonon/public/CMSSW_9_2_10/src/NoiseBiasScan/crab/computeNoiseFromRaw_cfg_10.py .
+ setting proxy: x509up_u91903
+ output file will be renamed: SiStripCommissioningSource_10.root
+cmsRun computeNoiseFromRaw_cfg_10_temp.py
+31-Jul-2018 14:12:15 CEST  Initiating request to open file root://eoscms.cern.ch//eos/cms/store/data/Run2018B/VRRandom0/RAW/v1/000/318/025/00000/CCF3744D-DE73-E811-85AD-FA163E54D73A.root
+%MSG-w XrdAdaptorInternal:  file_open 31-Jul-2018 14:12:17 CEST pre-events
+Failed to open file at URL root://eoscms.cern.ch:1094//eos/cms/store/data/Run2018B/VRRandom0/RAW/v1/000/318/025/00000/CCF3744D-DE73-E811-85AD-FA163E54D73A.root.
+%MSG
+%MSG-w XrdAdaptorInternal:  file_open 31-Jul-2018 14:12:17 CEST pre-events
+Failed to open file at URL root://eoscms.cern.ch:1094//eos/cms/store/data/Run2018B/VRRandom0/RAW/v1/000/318/025/00000/CCF3744D-DE73-E811-85AD-FA163E54D73A.root?tried=.
+%MSG
+31-Jul-2018 14:12:17 CEST  Fallback request to file root://xrootd-cms.infn.it//store/data/Run2018B/VRRandom0/RAW/v1/000/318/025/00000/CCF3744D-DE73-E811-85AD-FA163E54D73A.root
+%MSG-w XrdAdaptor:  file_open 31-Jul-2018 14:12:40 CEST pre-events
+Data is served from T2_US_Wisconsin instead of original site infn.it
+%MSG
+31-Jul-2018 14:12:41 CEST  Successfully opened file root://xrootd-cms.infn.it//store/data/Run2018B/VRRandom0/RAW/v1/000/318/025/00000/CCF3744D-DE73-E811-85AD-FA163E54D73A.root
+31-Jul-2018 14:12:43 CEST  Closed file root://xrootd-cms.infn.it//store/data/Run2018B/VRRandom0/RAW/v1/000/318/025/00000/CCF3744D-DE73-E811-85AD-FA163E54D73A.root
+----- Begin Fatal Exception 31-Jul-2018 14:12:43 CEST-----------------------
+An exception of category 'FormatIncompatibility' occurred while
+   [0] Constructing the EventProcessor
+   [1] Constructing input source of type PoolSource
+Exception Message:
+The release you are using, "CMSSW_9_2_10" , predates
+a release ("CMSSW_10_1_4") used in writing the input file, root://eoscms.cern.ch//eos/cms/store/data/Run2018B/VRRandom0/RAW/v1/000/318/025/00000/CCF3744D-DE73-E811-85AD-FA163E54D73A.root.
+Forward compatibility cannot be supported.
+----- End Fatal Exception -------------------------------------------------
+
+total 1.1M
+-rw-r--r-- 1 ntonon zh 535K Jul 31 14:10 computeNoiseFromRaw_cfg_10_temp.py
+-rw-r--r-- 1 ntonon zh 535K Jul 31 14:10 computeNoiseFromRaw_cfg_10.py
+-rw-r----- 1 ntonon zh 2.5K Jul 31 14:12 1533039018.184250628.out
+
+copy  to SiStripCommissioningSource_10.root
+cp: missing destination file operand after `SiStripCommissioningSource_10.root'
+Try `cp --help' for more information.
+
+total 1.1M
+-rw-r--r-- 1 ntonon zh 535K Jul 31 14:10 computeNoiseFromRaw_cfg_10_temp.py
+-rw-r--r-- 1 ntonon zh 535K Jul 31 14:10 computeNoiseFromRaw_cfg_10.py
+-rw-r----- 1 ntonon zh 2.8K Jul 31 14:12 1533039018.184250628.out
+
+
+Job finished at Tue Jul 31 14:12:43 CEST 2018 on node 
+ under linux version Scientific Linux CERN SLC release 6.10 (Carbon)
+
+CERN statistics: This process used approximately : 0:00:15 KSI2K hours (15 KSI2K seconds)
+                 This process corresponds to     : 0:00:59 HS06  hours (59 HS06  seconds)

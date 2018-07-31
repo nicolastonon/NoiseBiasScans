@@ -1,0 +1,33 @@
+Nof entries for each Vstep / Run 303272
+
+10V ----> 1756 events
+20V ----> 2503 events
+30V ----> 1175 events
+40V ----> 324.996 events
+50V ----> 2501 events
+60V ----> 1084 events
+70V ----> 2418 events
+80V ----> 2464 events
+90V ----> 851.996 events
+100V ----> 2532 events
+110V ----> 2485 events
+120V ----> 2425 events
+130V ----> 2508 events
+140V ----> 2390 events
+150V ----> 2537 events
+160V ----> 2424 events
+170V ----> 2391 events
+180V ----> 2501 events
+190V ----> 2365 events
+200V ----> 2329 events
+210V ----> 2938 events
+225V ----> 2660 events
+240V ----> 2459 events
+255V ----> 2429 events
+270V ----> 2303 events
+285V ----> 2329 events
+
+
+Min = 83199
+Max = 752127
+Mean = 562047

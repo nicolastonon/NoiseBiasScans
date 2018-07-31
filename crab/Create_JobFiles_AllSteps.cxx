@@ -92,11 +92,8 @@ using namespace std;
 /**
  * Create config .py files for all Vsteps, for given run/date
  */
-void Create_all_cfg_files(TString date, TString stepfile_run)
+void Create_all_cfg_files(TString date, TString stepfile_run, vector<TString> v_datasets, bool get_list_of_datafiles_from_textfile)
 {
-	//True --> will look for .txt file containing all the dataset files (needed if want to run on dataset interactively rather than using crab !)
-	bool get_full_list_of_files_from_run = true;
-
 	mkdir( ("run_"+stepfile_run+"/").Data(), 0777); //Create directory if inexistant
 
 
@@ -128,7 +125,7 @@ void Create_all_cfg_files(TString date, TString stepfile_run)
 		ofstream file_cfg_step(filename.Data());
 
 		string line;
-		getline(file_step,line);
+		getline(file_step,line); //Read first line (contains titles of columns)
 
 		double index = 0, timestamp = 0, run = 0, evtid_begin = 0, evtid_end = 0, HV = 0, nofevt = 0;
 
@@ -141,6 +138,8 @@ void Create_all_cfg_files(TString date, TString stepfile_run)
 	        std::istringstream iss(line);
 	        iss >> index >> timestamp >> run >> evtid_begin >> HV >> nofevt;
 
+			// cout<<"--- Looking for step "<<step_list[istep]<<endl;
+			// cout<<"---> HV = "<<HV<<endl;
 			// cout << index <<" "<< timestamp << " " << run <<" "<< evtid_begin <<" "<< HV <<endl;
 
 
@@ -151,9 +150,11 @@ void Create_all_cfg_files(TString date, TString stepfile_run)
 			// cout << index <<" "<< timestamp << " " << run <<" "<< evtid_end <<" "<< HV <<endl<<endl;
 
 			iter++;
-			if(iter>500)
+			if(iter>200)
 			{
 				cout<<FMAG("Step "<<step_list[istep]<<"V not found in step file -- Ignore !")<<endl;
+				cout<<"Check step file : if step does exist, make sure that the 1rst line of file contains titles"<<endl;
+
 
 				evtid_begin = evtid_end = 0;
 
@@ -161,7 +162,7 @@ void Create_all_cfg_files(TString date, TString stepfile_run)
 			}
 
 			// if(iter > 500) {cout<<"Line "<<__LINE__<<" : "<<FRED("Warning : stuck in this while loop ? Abort")<<endl; return;}
-	    }
+		}
 
 		iter = 0;
 		//Open template cfg file, copy it and modify some lines
@@ -179,19 +180,32 @@ void Create_all_cfg_files(TString date, TString stepfile_run)
 			}
 			//Line to replace (list of files)
 			//Read .txt file containing all input files
-			else if(get_full_list_of_files_from_run && ts.Contains("vstring") )
+			else if(get_list_of_datafiles_from_textfile && ts.Contains("list = []") )
 			{
-				int index = ts.Index("'");
-				ts.Remove(index);
+				int index = ts.Index("[");
+				ts.Remove(index); ts+= "[";
 
-				ifstream file_list( ("list_files/List_Files_Run_"+Convert_Number_To_TString(run)+".txt").Data() );
-
-				while(getline(file_list, line) )
+				for(int idataset=0; idataset<v_datasets.size(); idataset++)
 				{
-					ts+= line;
+					if(idataset>0 ) {ts+= ",";} //If many datasets, need to concatenate them with a simple comma
+
+					TString listfile_name = "list_files/run_"+Convert_Number_To_TString(run)+"/"+v_datasets[idataset]+".txt";
+					if(!Check_File_Existence(listfile_name) )
+					{
+						cout<<BOLD(FRED("File "<<listfile_name<<" not found !"))<<endl;
+					}
+
+					ifstream file_list( listfile_name.Data() );
+
+					while(getline(file_list, line) )
+					{
+						ts+= line;
+					}
+
+					file_list.close();
 				}
 
-				ts+= "),";
+				ts+= "]";
 			}
 
 			file_cfg_step<<ts<<endl;
@@ -212,8 +226,72 @@ void Create_all_cfg_files(TString date, TString stepfile_run)
 
 
 
+/*
+███████ ██    ██ ██████  ███    ███ ██ ████████     ████████  ██████      ██████   █████  ████████  ██████ ██   ██
+██      ██    ██ ██   ██ ████  ████ ██    ██           ██    ██    ██     ██   ██ ██   ██    ██    ██      ██   ██
+███████ ██    ██ ██████  ██ ████ ██ ██    ██           ██    ██    ██     ██████  ███████    ██    ██      ███████
+     ██ ██    ██ ██   ██ ██  ██  ██ ██    ██           ██    ██    ██     ██   ██ ██   ██    ██    ██      ██   ██
+███████  ██████  ██████  ██      ██ ██    ██           ██     ██████      ██████  ██   ██    ██     ██████ ██   ██
+*/
 
 
+void Submit_All_To_Batch(TString path_cfg_files, TString run, TString outputdir)
+{
+	if(path_cfg_files == "")
+	{
+		cout<<BOLD(FRED("Need to specify relative path of cfg files ! Abort"))<<endl;
+		cout<<"-- Ex : ./Create_JobFiles_AllSteps.exe ."<<endl;
+	}
+
+	cout<<FYEL("--- Going to submit all jobs to CERN's batch")<<endl;
+	cout<<FYEL("#Make sure you have run the 'voms' command & copied the proxy to your home")<<endl;
+	cout<<FYEL("#Make sure you have configured 'cmsRun_batch_eos' properly")<<endl;
+
+	path_cfg_files.Remove(TString::kTrailing, '/'); //Remove '/' char at end of TString if present
+
+	//Create proxy
+	TString cmd = "voms-proxy-init --voms cms --valid 168:00";
+	system(cmd.Data());
+
+	//Get proxy name
+	cmd = "ls -l /tmp/x509up_u* | grep ntonon";
+	TString proxy_name = GetStdoutFromCommand(cmd);
+	int index = proxy_name.Index("x509");
+	proxy_name.Remove(0, index); //Keep only the proxy string
+	cout<<"#proxy name : "<<proxy_name<<endl;
+
+	//Copy proxy locally
+	cmd = "cp /tmp/" + proxy_name + " ~";
+	system(cmd.Data());
+
+	//For each Vstep, send job to batch
+	for(int istep=0; istep<step_list.size(); istep++)
+	{
+		if(!step_isUsed[istep]) {continue;} //If step doesn't exist for this run
+
+		cout<<endl<<step_list[istep]<< " V :"<<endl;
+
+		if(Find_Path_EOS_File(outputdir, run, step_list[istep]) != "")
+		{
+			cout<<"Root file already exists ; not resubmitting this job !"<<endl; continue;
+		}
+
+		//Cp cfg file locally
+		cmd = "cp " + path_cfg_files + "/computeNoiseFromRaw_cfg_"+step_list[istep] + ".py .";
+		system(cmd.Data());
+
+		//Send job to batch
+		cmd = "bsub -q8nh cmsRun_batch_eos computeNoiseFromRaw_cfg_"+step_list[istep]+".py " + proxy_name + " SiStripCommissioningSource_"+step_list[istep]+".root " + outputdir;
+		system(cmd.Data());
+	}
+
+	return;
+}
+
+
+
+
+/*
 
 //------------------------------------------
  //  ####  #####    ##   #####     ###### # #      ######  ####
@@ -224,9 +302,7 @@ void Create_all_cfg_files(TString date, TString stepfile_run)
  //  ####  #    # #    # #####     #      # ###### ######  ####
  //------------------------------------------
 
-/**
- * Create all the crab3 files for all Vsteps, foor given run/date
- */
+//Create all the crab3 files for all Vsteps, foor given run/date
 void Create_all_crab_files(TString date, TString run, TString version)
 {
 	mkdir( ("run_"+run+"/").Data(), 0777); //Create directory if inexistant
@@ -353,9 +429,11 @@ void Submit_All_toCrab(TString path)
 
 		TString cmd = "cp "+ path+"/"+crabfile_name + " ."; system(cmd); //Copy locally crab file to submit
 		cmd = "cp "+ path+"/"+configfile_name + " ."; system(cmd); //Copy locally cfg file to submit
+
 		cmd = "crab submit ./" + crabfile_name; system(cmd); //Submit tmp crab file
-		cmd = "rm ./" + crabfile_name; system(cmd); //Remove tmp crab file
-		cmd = "rm ./" + configfile_name; system(cmd); //Remove tmp cfg file
+
+		cmd = "rm ./" + crabfile_name + "*"; system(cmd); //Remove tmp crab file
+		cmd = "rm ./" + configfile_name + "*"; system(cmd); //Remove tmp cfg file
 	}
 }
 
@@ -370,7 +448,7 @@ void Re_Submit_All_toCrab(TString path, TString date, TString run, TString versi
 		TString cmd = "crab resubmit ./crab_projects/crab_NoiseScan_"+ date + "_run" + run + "_" +  version + "_" + step_list[istep];
 		system(cmd);
 	}
-}
+}*/
 
 
 
@@ -394,17 +472,36 @@ int main(int argc, char **argv)
         path_from_command = argv[1];
     }
 
-	TString date = "20170919", run = "303272", version = "v2";
+	//True --> will look for .txt file containing all the dataset files (needed if want to run on dataset interactively rather than using crab !)
+	bool get_list_of_datafiles_from_textfile = true;
+
+	TString date, run, version, outputdir;
+
+	// date = "20120921", run = "203243", version = "v1";
+	// date = "20170919", run = "303272", version = "v1";
+	// date = "20160914", run = "280667", version = "v1";
+	date = "20180618", run = "317974", version = "v1";
+	outputdir="/store/group/dpg_tracker_strip/comm_tracker/Strip/RadMonitoring/NoiseBiasScan/2018/VRRandom0to7";
+
+	vector<TString> v_datasets;
+	v_datasets.push_back("dataset0");
+	v_datasets.push_back("dataset1");
+	v_datasets.push_back("dataset2");
+	v_datasets.push_back("dataset3");
+	v_datasets.push_back("dataset4");
+	v_datasets.push_back("dataset5");
+	v_datasets.push_back("dataset6");
+	v_datasets.push_back("dataset7");
 
 	Fill_Step_List_Vector(run);
 
-	// Create_all_cfg_files(date, run);
+	Create_all_cfg_files(date, run, v_datasets, get_list_of_datafiles_from_textfile);
 	// Create_all_crab_files(date, run, version);
 
-	Submit_All_toCrab(path_from_command);
+	// Submit_All_To_Batch(path_from_command, run, outputdir);
 
-	// Re_Submit_All_toCrab(path_from_command, date, run, version);
+	// Submit_All_toCrab(path_from_command);
+	// Re_Submit_All_toCrab(path_from_command, date, run, version); //-- obsolete
 
 	return 0;
 }
-
